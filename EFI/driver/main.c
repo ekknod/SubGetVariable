@@ -208,6 +208,38 @@ EFI_STATUS EFIAPI EfiMain(IN EFI_LOADED_IMAGE *LoadedImage, IN EFI_SYSTEM_TABLE 
 		0x18, 0x4C, 0x8B, 0x79, 0x20, 0x4C, 0x89, 0x7C, 0x24, 0x20, 0x48, 0x8B, 0x09, 0x48, 0x8B, 0x40, 0x18, 0xFF, 0xD0, 0x48, 0xB8, 0x0F, 0x00,
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x48, 0x83, 0xC4, 0x28, 0xC3, 0x48, 0x31, 0xC0, 0x48, 0x83, 0xC4, 0x28, 0xC3 };
 
+	/*
+		0:  48 83 ec 28             sub    rsp,0x28
+		4:  65 48 8b 04 25 88 01    mov    rax,QWORD PTR gs:0x188
+		b:  00 00
+		d:  48 85 c0                test   rax,rax
+		10: 74 51                   je     0x63
+		12: 48 8b 80 b8 00 00 00    mov    rax,QWORD PTR [rax+0xb8]
+		19: 48 8b 80 50 05 00 00    mov    rax,QWORD PTR [rax+0x550]
+		20: 48 85 c0                test   rax,rax
+		23: 74 3e                   je     0x63
+		25: 48 8b 40 18             mov    rax,QWORD PTR [rax+0x18]
+		29: 48 8b 40 20             mov    rax,QWORD PTR [rax+0x20]
+		2d: 48 8b 48 10             mov    rcx,QWORD PTR [rax+0x10]
+		31: 48 85 c9                test   rcx,rcx
+		34: 74 2d                   je     0x63
+		36: 48 8b 51 08             mov    rdx,QWORD PTR [rcx+0x8]
+		3a: 4c 8b 41 10             mov    r8,QWORD PTR [rcx+0x10]
+		3e: 4c 8b 49 18             mov    r9,QWORD PTR [rcx+0x18]
+		42: 4c 8b 79 20             mov    r15,QWORD PTR [rcx+0x20]
+		46: 4c 89 7c 24 20          mov    QWORD PTR [rsp+0x20],r15
+		4b: 48 8b 09                mov    rcx,QWORD PTR [rcx]
+		4e: 48 8b 40 18             mov    rax,QWORD PTR [rax+0x18]
+		52: ff d0                   call   rax
+		54: 48 b8 0f 00 00 00 00    movabs rax,0x800000000000000f
+		5b: 00 00 80
+		5e: 48 83 c4 28             add    rsp,0x28
+		62: c3                      ret
+		63: 48 31 c0                xor    rax,rax
+		66: 48 83 c4 28             add    rsp,0x28
+		6a: c3                      ret
+	*/
+
 	MemCopy( SubGetVariable, payload, sizeof(payload) );
 
 	Print(L"[bootx64.efi] SubGetVariable has been successfully patched\n");
