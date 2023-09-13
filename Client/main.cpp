@@ -21,7 +21,6 @@ BOOL initialize_main(void);
 QWORD GetKernelExport(PCSTR name);
 
 QWORD MmCopyMemoryAddress;
-void mm_copy_memory(QWORD buffer, QWORD address, QWORD length, ULONG memory_type, QWORD *res);
 
 namespace km
 {
@@ -179,54 +178,27 @@ int main(void)
 	//
 	// demo
 	//
-	vm_handle process = vm::get_process_by_name("csgo.exe");
+	vm_handle process = vm::get_process_by_name("explorer.exe");
 	if (process == 0)
 	{
 		return 0;
 	}
 
-	QWORD client_dll = vm::get_module(process, "client.dll");
-	if (client_dll == 0)
+	QWORD kernel32 = vm::get_module(process, "kernel32.dll");
+	if (kernel32 == 0)
 	{
 		return 0;
 	}
 
-	printf("[+] client.dll: 0x%llx\n", client_dll);
+	printf("[+] kernel32.dll: 0x%llx\n", kernel32);
 
-	QWORD create_interface = vm::get_module_export(process, client_dll, "CreateInterface");
-	if (create_interface == 0)
+	QWORD OpenProcessAddr = vm::get_module_export(process, kernel32, "OpenProcess");
+	if (OpenProcessAddr == 0)
 	{
 		return 0;
 	}
 
-	printf("[+] client.dll->CreateInterface: 0x%llx\n", create_interface);
-
-	PVOID client_dump = vm::dump_module(process, client_dll , VM_MODULE_TYPE::CodeSectionsOnly);
-	if (client_dump == 0)
-	{
-		return 0;
-	}
-
-
-	QWORD GetLocalTeam = vm::scan_pattern(client_dump, "\xE8\x00\x00\x00\x00\x85\xC0\x74\x11\x5F", "x????xxxxx", 10);
-
-	vm::free_module(client_dump);
-
-	if (GetLocalTeam == 0)
-	{
-		return 0;
-	}
-
-	GetLocalTeam = (DWORD)vm::get_relative_address(process, GetLocalTeam, 1, 5);
-
-	printf("[+] client.dll->GetLocalTeam: 0x%llx\n", GetLocalTeam);
-
-	// 
-	// QWORD cr3=0;
-	// mm_copy_memory((QWORD)&cr3, 0x10A0, 8, 0x1, 0);
-	// printf("cr3: %llx\n", cr3);
-	// printf("MmCopyMemoryAddress physical: %llx\n", pm::translate(cr3, MmCopyMemoryAddress));
-	//
+	printf("[+] kernel32.dll->OpenProcess: 0x%llx\n", OpenProcessAddr);
 
 	return 0;
 }
@@ -320,7 +292,7 @@ NtQuerySystemEnvironmentValueEx(
     __out_opt PULONG Attributes
     );
 
-NTSTATUS call_payload(QWORD target, PVOID parameters)
+QWORD call_payload_ex(QWORD target, PVOID parameters)
 {
 	QWORD peb;
 
@@ -348,54 +320,53 @@ NTSTATUS call_payload(QWORD target, PVOID parameters)
 						&ret_len,
 						&attributes);
 
+	QWORD rax = *(QWORD*)(peb + 0x18);
 	*(QWORD*)(peb + 0x18) = 0;
 	*(QWORD*)(peb + 0x10) = 0;
 
-	return status;
+
+	if (NT_SUCCESS(status))
+		return 0;
+
+
+	return rax;
 }
 
-void mm_copy_memory(QWORD buffer, QWORD address, QWORD length, ULONG memory_type, QWORD *res)
+QWORD call_payload(QWORD kernel_address, QWORD r1 = 0, QWORD r2 = 0, QWORD r3 = 0, QWORD r4 = 0, QWORD r5 = 0, QWORD r6 = 0, QWORD r7 = 0)
 {
 	#pragma pack(push,1)
 	typedef struct {
-		QWORD rcx;
-		QWORD rdx;
-		QWORD r8;
-		QWORD r9;
-		QWORD rsp_20;
+		QWORD param_1;
+		QWORD param_2;
+		QWORD param_3;
+		QWORD param_4;
+		QWORD param_5;
+		QWORD param_6;
+		QWORD param_7;
 	} PAYLOAD ;
 	#pragma pack(pop)
 
 	PAYLOAD parameters;
-	parameters.rcx = (QWORD)buffer;
-	parameters.rdx = address;
-	parameters.r8  = length;
-	parameters.r9 = memory_type;
+	parameters.param_1 = r1;
+	parameters.param_2 = r2;
+	parameters.param_3 = r3;
+	parameters.param_4 = r4;
+	parameters.param_5 = r5;
+	parameters.param_6 = r6;
+	parameters.param_7 = r7;
 
-	char rsp[120];
-	memset(rsp, 0, 120);
-
-	QWORD reserved=0;
-	*(QWORD*)&rsp[0] = (QWORD)&reserved;
-	parameters.rsp_20 = (QWORD)rsp;
-
-	call_payload( MmCopyMemoryAddress, &parameters );
-
-	if (res)
-	{
-		*res = *(QWORD*)&rsp[0];
-	}
+	return call_payload_ex(kernel_address, &parameters );
 }
 
 static BOOL km::read(QWORD address, PVOID buffer, QWORD length)
 {
 	QWORD res = 0;
-	mm_copy_memory( (QWORD)buffer, address, length, 0x2, &res);
+	call_payload(MmCopyMemoryAddress, (QWORD)buffer, address, length, 0x2, (QWORD)&res);
 
 	if (res == length)
 	{
 		return 1;
-	}
+	} 
 
 	return 0;
 }
@@ -404,7 +375,7 @@ static DWORD km::read_i32(QWORD addr)
 {
 	DWORD buffer=0;
 	QWORD res = 0;
-	mm_copy_memory((QWORD)&buffer, addr, sizeof(buffer), 0x2, &res);
+	call_payload(MmCopyMemoryAddress, (QWORD)&buffer, addr, sizeof(buffer), 0x2, (QWORD)&res);
 
 	if (res == sizeof(buffer))
 	{
@@ -418,7 +389,7 @@ static QWORD km::read_i64(QWORD addr)
 {
 	QWORD buffer=0;
 	QWORD res = 0;
-	mm_copy_memory((QWORD)&buffer, addr, sizeof(buffer), 0x2, &res);
+	call_payload(MmCopyMemoryAddress, (QWORD)&buffer, addr, sizeof(buffer), 0x2, (QWORD)&res);
 
 	if (res == sizeof(buffer))
 	{
@@ -431,7 +402,7 @@ static QWORD km::read_i64(QWORD addr)
 static BOOL pm::read(QWORD address, PVOID buffer, QWORD length)
 {
 	QWORD res = 0;
-	mm_copy_memory( (QWORD)buffer, address, length, 0x1, &res);
+	call_payload(MmCopyMemoryAddress, (QWORD)buffer, address, length, 0x1, (QWORD)&res);
 
 	if (res == length)
 	{
@@ -443,7 +414,7 @@ static BOOL pm::read(QWORD address, PVOID buffer, QWORD length)
 
 static BOOL pm::read(QWORD address, PVOID buffer, QWORD length, QWORD *res)
 {
-	mm_copy_memory( (QWORD)buffer, address, length, 0x1, res);
+	call_payload(MmCopyMemoryAddress, (QWORD)buffer, address, length, 0x1, (QWORD)res);
 
 	if (*res == length)
 	{
@@ -457,7 +428,7 @@ static QWORD pm::read_i64(QWORD addr)
 {
 	QWORD buffer=0;
 	QWORD res = 0;
-	mm_copy_memory((QWORD)&buffer, addr, sizeof(buffer), 0x1, &res);
+	call_payload(MmCopyMemoryAddress, (QWORD)&buffer, addr, sizeof(buffer), 0x1, (QWORD)&res);
 
 	if (res == sizeof(buffer))
 	{
