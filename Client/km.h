@@ -191,6 +191,13 @@ namespace km
 		return rax;
 	}
 
+	template <typename T>
+	T call(QWORD kernel_address, QWORD r1 = 0, QWORD r2 = 0, QWORD r3 = 0, QWORD r4 = 0, QWORD r5 = 0, QWORD r6 = 0, QWORD r7 = 0)
+	{
+		QWORD ret = call(kernel_address, r1, r2, r3, r4, r5, r6, r7);
+		return *(T*)&ret;
+	}
+
 	BOOL initialize(void)
 	{
 		QWORD ntoskrnl_base = 0;
